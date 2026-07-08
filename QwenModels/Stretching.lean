@@ -2894,36 +2894,6 @@ private theorem pureAt_comp_prPure
   refine ⟨hfgpos, ?_⟩
   simpa [hfgdeg] using hnp
 
-example {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)} {r : ℕ} {f g : K[X]}
-    {data : NewtonPolygonData} (hNP : HasNewtonPolygonData (v : K → WithTop ℤ) f data)
-    (hg : PrPure (v : K → WithTop ℤ) r g)
-    (hpos : ∀ seg ∈ data, (0 : ℝ) < (r : ℝ) + (seg.slope : ℝ)) :
-    ∃ factors : List K[X],
-      f.comp g = factors.prod ∧
-        List.Forall₂
-          (fun factor (seg : SegmentData) =>
-            factor.natDegree = seg.length ∧ PureAt (v : K → WithTop ℤ) factor seg.slope)
-          factors
-          (data.map fun seg : SegmentData =>
-            { length := seg.length * g.natDegree,
-              length_pos := Nat.mul_pos seg.length_pos (PrPure.natDegree_pos hg),
-              slope := seg.slope / (g.natDegree : ℚ) }) := by
-  rcases blackbox_np_factor_by_segments hNP with ⟨factors, hprod, hforall⟩
-  refine ⟨factors.map fun factor : K[X] => factor.comp g, ?_, ?_⟩
-  · rw [← Polynomial.list_prod_comp, hprod]
-  · clear hNP hprod
-    induction hforall with
-    | nil => simp
-    | cons hseg htail ih =>
-        simp only [List.map_cons, List.forall₂_cons]
-        constructor
-        · constructor
-          · rw [Polynomial.natDegree_comp, hseg.1]
-          · exact pureAt_comp_prPure hseg.2 hg (hpos _ (by simp))
-        · exact ih (by
-            intro seg hmem
-            exact hpos seg (by simp [hmem]))
-
 private theorem prPure_comp_prPure
     {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)} {r : ℕ} {f g : K[X]}
     (hf : PrPure (v : K → WithTop ℤ) r f) (hg : PrPure (v : K → WithTop ℤ) r g)
@@ -3712,17 +3682,6 @@ private theorem product_two_pure_strict_slopes
 example (factors : List ℚ[X]) (g : ℚ[X]) :
     factors.prod.comp g = (factors.map fun h : ℚ[X] => h.comp g).prod := by
   exact Polynomial.list_prod_comp factors g
-
-example {K : Type*} [Field K] {ord : K → WithTop ℤ} {f g : K[X]}
-    {data : NewtonPolygonData} (hNP : HasNewtonPolygonData ord f data) :
-    ∃ factors : List K[X],
-      f.comp g = (factors.map fun factor : K[X] => factor.comp g).prod ∧
-        List.Forall₂
-          (fun factor seg => factor.natDegree = seg.length ∧ PureAt ord factor seg.slope)
-          factors data := by
-  rcases blackbox_np_factor_by_segments hNP with ⟨factors, hprod, hforall⟩
-  refine ⟨factors, ?_, hforall⟩
-  rw [← Polynomial.list_prod_comp, hprod]
 
 example {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)} {r : ℕ} {g : K[X]}
     {factors : List K[X]} {data : NewtonPolygonData}
@@ -4569,11 +4528,20 @@ private theorem npAssembly_strictSlopes_map_div (d : ℕ) (hd : 0 < d) :
             exact div_lt_div_of_pos_right h.1 (by exact_mod_cast hd)
           · exact ih h.2
 
+/- The factorization by segments is threaded through as an explicit
+hypothesis so that this theorem stays honest over an arbitrary valued field;
+it is discharged over `ℚ_[p]` by `blackbox_np_factor_by_segments` in the
+final examples below. -/
 private theorem npAssembly_main_stretch_strong
     {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)}
     {r : ℕ} {f g : K[X]} {data : NewtonPolygonData}
     (hne : data ≠ [])
     (hNP : HasNewtonPolygonData (v : K → WithTop ℤ) f data)
+    (hfactor : ∃ factors : List K[X], factors.prod = f ∧
+      List.Forall₂
+        (fun factor seg => factor.natDegree = seg.length ∧
+          PureAt (v : K → WithTop ℤ) factor seg.slope)
+        factors data)
     (hg : PrPure (v : K → WithTop ℤ) r g)
     (hpos : ∀ seg ∈ data, (0 : ℝ) < (r : ℝ) + (seg.slope : ℝ)) :
     HasNewtonPolygonData (v : K → WithTop ℤ) (f.comp g)
@@ -4593,7 +4561,7 @@ private theorem npAssembly_main_stretch_strong
          slope := seg.slope / (g.natDegree : ℚ) } : SegmentData))) ≠ [] := by
     intro h
     exact hne (List.map_eq_nil_iff.mp h)
-  rcases blackbox_np_factor_by_segments hNP with ⟨factors, hprod, hforall⟩
+  rcases hfactor with ⟨factors, hprod, hforall⟩
   have hcompProd : f.comp g = (factors.map (fun q : K[X] => q.comp g)).prod := by
     rw [← hprod, Polynomial.list_prod_comp]
   have hforall' : List.Forall₂ (fun q seg => q.natDegree = seg.length ∧
@@ -4638,80 +4606,47 @@ private theorem main_stretch_one_segment
   have hcomp := pureAt_comp_prPure hpure hg hpos
   simpa [Polynomial.natDegree_comp, hdeg] using PureAt.hasNewtonPolygonData hcomp
 
-private theorem main_stretch_two_segments
-    {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)}
-    {r : ℕ} {f g : K[X]} {seg₁ seg₂ : SegmentData}
-    (hNP : HasNewtonPolygonData (v : K → WithTop ℤ) f [seg₁, seg₂])
-    (hg : PrPure (v : K → WithTop ℤ) r g)
-    (hpos₁ : (0 : ℝ) < (r : ℝ) + (seg₁.slope : ℝ))
-    (hpos₂ : (0 : ℝ) < (r : ℝ) + (seg₂.slope : ℝ)) :
-    HasNewtonPolygonData (v : K → WithTop ℤ) (f.comp g)
-      [{ length := seg₁.length * g.natDegree,
-         length_pos := Nat.mul_pos seg₁.length_pos (PrPure.natDegree_pos hg),
-         slope := seg₁.slope / (g.natDegree : ℚ) },
-       { length := seg₂.length * g.natDegree,
-         length_pos := Nat.mul_pos seg₂.length_pos (PrPure.natDegree_pos hg),
-         slope := seg₂.slope / (g.natDegree : ℚ) }] := by
-  rcases blackbox_np_factor_by_segments hNP with ⟨factors, hprod, hforall⟩
-  cases factors with
-  | nil =>
-      cases hforall
-  | cons p rest =>
-  cases rest with
-  | nil =>
-      cases hforall with
-      | cons hpseg htail => cases htail
-  | cons q rest =>
-  cases rest with
-  | nil =>
-    cases hforall with
-    | cons hpseg htail =>
-    cases htail with
-    | cons hqseg hnil =>
-    have hfg : f.comp g = (p.comp g) * (q.comp g) := by
-      rw [← hprod]
-      rw [Polynomial.list_prod_comp]
-      simp
-    have hpcomp : PureAt (v : K → WithTop ℤ) (p.comp g)
-        (seg₁.slope / (g.natDegree : ℚ)) :=
-      pureAt_comp_prPure hpseg.2 hg hpos₁
-    have hqcomp : PureAt (v : K → WithTop ℤ) (q.comp g)
-        (seg₂.slope / (g.natDegree : ℚ)) :=
-      pureAt_comp_prPure hqseg.2 hg hpos₂
-    have hstrict : ((seg₁.slope / (g.natDegree : ℚ) : ℚ) : ℝ) <
-        ((seg₂.slope / (g.natDegree : ℚ) : ℚ) : ℝ) := by
-      have hslopes := HasNewtonPolygonData.strictSlopes hNP
-      simp only [StrictlyIncreasingSlopes] at hslopes
-      have hstrictQ : seg₁.slope / (g.natDegree : ℚ) <
-          seg₂.slope / (g.natDegree : ℚ) :=
-        div_lt_div_of_pos_right hslopes.1
-          (by exact_mod_cast PrPure.natDegree_pos hg : (0 : ℚ) < g.natDegree)
-      exact_mod_cast hstrictQ
-    have hprodNP := product_two_pure_strict_slopes
-      (v := v) (p := p.comp g) (q := q.comp g)
-      (s1 := seg₁.slope / (g.natDegree : ℚ))
-      (s2 := seg₂.slope / (g.natDegree : ℚ))
-      hpcomp hqcomp hstrict
-    rw [hfg]
-    simpa [Polynomial.natDegree_comp, hpseg.1, hqseg.1] using hprodNP
-  | cons extra rest =>
-      cases hforall with
-      | cons hpseg htail =>
-      cases htail with
-      | cons hqseg htail₂ => cases htail₂
-
-example {K : Type*} [Field K] {v : AddValuation K (WithTop ℤ)}
-    {r : ℕ} {f g : K[X]} {data : NewtonPolygonData}
+/- THM_MAIN_STRETCH_STRONG over `ℚ_[p]`: the Newton polygon of `f.comp g`
+is the polygon of `f` with all horizontal lengths multiplied by `degree g`
+and all slopes divided by `degree g`. -/
+example {p : ℕ} [Fact p.Prime] {r : ℕ} {f g : ℚ_[p][X]}
+    {data : NewtonPolygonData}
     (hne : data ≠ [])
-    (hNP : HasNewtonPolygonData (v : K → WithTop ℤ) f data)
-    (hg : PrPure (v : K → WithTop ℤ) r g)
+    (hNP : HasNewtonPolygonData
+      ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ) f data)
+    (hg : PrPure
+      ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ) r g)
+    (hpos : ∀ seg ∈ data, (0 : ℝ) < (r : ℝ) + (seg.slope : ℝ)) :
+    HasNewtonPolygonData
+      ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ)
+      (f.comp g)
+      (data.map (fun seg =>
+        ({ length := seg.length * g.natDegree,
+           length_pos := Nat.mul_pos seg.length_pos (PrPure.natDegree_pos hg),
+           slope := seg.slope / (g.natDegree : ℚ) } : SegmentData))) :=
+  npAssembly_main_stretch_strong hne hNP
+    (blackbox_np_factor_by_segments hne hNP) hg hpos
+
+/- THM_MAIN_STRETCH_PUBLISHED_FORM over `ℚ_[p]`: the Newton polygon of
+`f.comp g` has the same number of maximal segments as that of `f`, with
+slopes divided by `degree g`. -/
+example {p : ℕ} [Fact p.Prime] {r : ℕ} {f g : ℚ_[p][X]}
+    {data : NewtonPolygonData}
+    (hne : data ≠ [])
+    (hNP : HasNewtonPolygonData
+      ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ) f data)
+    (hg : PrPure
+      ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ) r g)
     (hpos : ∀ seg ∈ data, (0 : ℝ) < (r : ℝ) + (seg.slope : ℝ)) :
     ∃ data' : NewtonPolygonData,
-      HasNewtonPolygonData (v : K → WithTop ℤ) (f.comp g) data' ∧
+      HasNewtonPolygonData
+        ((Padic.addValuation : AddValuation ℚ_[p] (WithTop ℤ)) : ℚ_[p] → WithTop ℤ)
+        (f.comp g) data' ∧
       data'.length = data.length ∧
       data'.map (fun seg => seg.slope) =
         data.map (fun seg => seg.slope / (g.natDegree : ℚ)) := by
-  refine ⟨_, npAssembly_main_stretch_strong hne hNP hg hpos, ?_, ?_⟩
+  refine ⟨_, npAssembly_main_stretch_strong hne hNP
+    (blackbox_np_factor_by_segments hne hNP) hg hpos, ?_, ?_⟩
   · rw [List.length_map]
   · rw [List.map_map]
     rfl
